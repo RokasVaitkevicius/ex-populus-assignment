@@ -9,7 +9,7 @@ interface LawnVisualizationProps {
   detectedPixels?: { x: number; y: number }[]
 }
 
-const LawnVisualization: React.FC<LawnVisualizationProps> = ({
+export const LawnVisualization: React.FC<LawnVisualizationProps> = ({
   imageUrl,
   estimatedArea,
   detectedPixels,
@@ -56,5 +56,3 @@ const LawnVisualization: React.FC<LawnVisualizationProps> = ({
     </div>
   )
 }
-
-export default LawnVisualization

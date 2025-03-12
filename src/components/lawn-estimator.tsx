@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useForm } from "react-hook-form"
 import axios from "axios"
-import LawnVisualization from "./lawn-visualized"
+import { LawnVisualization } from "./lawn-visualized"
 
 interface FormData {
   address: string
@@ -27,7 +27,7 @@ interface EstimateResult {
   detectedPixels?: { x: number; y: number }[]
 }
 
-export function LawnEstimator() {
+export const LawnEstimator = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<EstimateResult | null>(null)
   const [error, setError] = useState<string | null>(null)
