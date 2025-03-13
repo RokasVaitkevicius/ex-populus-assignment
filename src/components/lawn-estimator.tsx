@@ -8,16 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { ComboboxInput } from "@/components/combobox-input"
-import { useForm, Controller } from "react-hook-form"
-import axios from "axios"
 import { BingMap } from "./bing-map"
 import { LawnVisualizer } from "./lawn-visualizer"
-
-interface FormData {
-  address: string
-}
+import { AddressForm } from "./form/address-form"
+import { estimateLawn } from "@/app/actions/estimate-lawn"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { InfoIcon, AlertCircleIcon } from "lucide-react"
 
 interface EstimateResult {
   address: string
@@ -33,47 +29,23 @@ export const LawnEstimator = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<EstimateResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
-    null
-  )
+  const [location, setLocation] = useState<{
+    lat: number
+    lng: number
+    address: string
+  } | null>(null)
 
-  const {
-    control,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<FormData>()
-
-  const onSubmit = async (data: FormData) => {
-    setIsLoading(true)
+  const handleAddressFound = (loc: {
+    lat: number
+    lng: number
+    address: string
+  }) => {
+    setLocation(loc)
     setError(null)
-    setResult(null)
-
-    try {
-      const response = await axios.post("/api/geocode", data)
-      const { lat, lng } = response.data
-      setLocation({ lat, lng })
-    } catch (err) {
-      console.error(err)
-      setError("Failed to find the address. Please check and try again.")
-    } finally {
-      setIsLoading(false)
-    }
   }
 
-  const handleSuggestionSelected = (suggestion: {
-    address: string
-    latitude?: number
-    longitude?: number
-  }) => {
-    setValue("address", suggestion.address)
-
-    if (suggestion.latitude && suggestion.longitude) {
-      setLocation({
-        lat: suggestion.latitude,
-        lng: suggestion.longitude,
-      })
-    }
+  const handleError = (errorMessage: string) => {
+    setError(errorMessage)
   }
 
   const handlePointSelected = async (
@@ -93,17 +65,23 @@ export const LawnEstimator = () => {
     setError(null)
 
     try {
-      const response = await axios.post("/api/estimate-lawn", {
+      const result = await estimateLawn({
         coordinates: { lat, lng },
-        zoom: zoom,
-        mapWidth: mapWidth,
-        mapHeight: mapHeight,
-        mapBounds: mapBounds,
+        zoom,
+        address: location?.address,
+        mapWidth,
+        mapHeight,
+        mapBounds,
       })
-      setResult(response.data)
-    } catch (err) {
+
+      setResult(result)
+    } catch (err: Error | unknown) {
       console.error(err)
-      setError("Failed to analyze lawn area. Please try a different location.")
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to analyze lawn area. Please try a different location."
+      )
     } finally {
       setIsLoading(false)
     }
@@ -119,43 +97,24 @@ export const LawnEstimator = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mb-4">
-          <div className="space-y-2">
-            <Controller
-              name="address"
-              control={control}
-              rules={{ required: "Address is required" }}
-              render={({ field }) => (
-                <ComboboxInput
-                  {...field}
-                  placeholder="Enter property address (e.g., 123 Main St, City, State)"
-                  className="w-full"
-                  onSuggestionSelected={handleSuggestionSelected}
-                />
-              )}
-            />
-            {errors.address && (
-              <p className="text-red-500 text-sm">{errors.address.message}</p>
-            )}
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full bg-green-600 hover:bg-green-700"
-            disabled={isLoading}
-          >
-            {isLoading ? "Searching..." : "Find Location"}
-          </Button>
-        </form>
+        <AddressForm
+          onAddressFound={handleAddressFound}
+          onError={handleError}
+        />
 
         {error && (
-          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
-            {error}
-          </div>
+          <Alert variant="destructive" className="mt-4">
+            <AlertCircleIcon className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-md mb-4">
-          <p className="text-sm font-medium">How to use:</p>
+          <p className="text-sm font-medium flex items-center gap-2">
+            <InfoIcon className="h-4 w-4" />
+            How to use:
+          </p>
           <ol className="text-sm list-decimal pl-5 mt-1 space-y-1">
             <li>
               Enter an address to center the map and click &quot;Find

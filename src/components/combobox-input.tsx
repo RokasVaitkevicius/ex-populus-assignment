@@ -1,9 +1,5 @@
 "use client"
 
-import * as React from "react"
-import { Input } from "./ui/input"
-import axios from "axios"
-import { useDebounce } from "@/lib/hooks/use-debounce"
 import {
   type ChangeEvent,
   type InputHTMLAttributes,
@@ -12,6 +8,9 @@ import {
   useRef,
   useState,
 } from "react"
+import { Input } from "./ui/input"
+import { useDebounce } from "@/lib/hooks/use-debounce"
+import { getAddressSuggestions } from "@/app/actions/autocomplete"
 
 interface Suggestion {
   address: string
@@ -21,7 +20,6 @@ interface Suggestion {
 
 interface ComboboxInputProps extends InputHTMLAttributes<HTMLInputElement> {
   onSuggestionSelected?: (suggestion: Suggestion) => void
-  suggestionsEndpoint?: string
 }
 
 export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
@@ -29,7 +27,6 @@ export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
     {
       className,
       onSuggestionSelected,
-      suggestionsEndpoint = "/api/autocomplete",
       value: propValue,
       defaultValue,
       onChange,
@@ -61,10 +58,8 @@ export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
 
         try {
           setIsLoading(true)
-          const response = await axios.get(
-            `${suggestionsEndpoint}?query=${encodeURIComponent(debouncedQuery)}`
-          )
-          setSuggestions(response.data.suggestions || [])
+          const result = await getAddressSuggestions(debouncedQuery)
+          setSuggestions(result || [])
         } catch (error) {
           console.error("Failed to fetch suggestions:", error)
           setSuggestions([])
@@ -74,7 +69,7 @@ export const ComboboxInput = forwardRef<HTMLInputElement, ComboboxInputProps>(
       }
 
       fetchSuggestions()
-    }, [debouncedQuery, suggestionsEndpoint])
+    }, [debouncedQuery])
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 
 interface MicrosoftMapsLocation {
   latitude: number
@@ -132,6 +132,7 @@ export const BingMap = ({
       center: new Microsoft.Maps.Location(defaultLatitude, defaultLongitude),
       mapTypeId: Microsoft.Maps.MapTypeId.aerial,
       zoom: currentZoom,
+      showMapTypeSelector: false,
     })
 
     Microsoft.Maps.Events.addHandler(

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server"
+"use server"
+
 import axios from "axios"
 
 interface BingAddress {
@@ -43,28 +44,19 @@ interface BingAutosuggestResponse {
   traceId: string
 }
 
-export const GET = async (req: Request) => {
+export const getAddressSuggestions = async (query: string) => {
+  if (!query) {
+    throw new Error("Query parameter is required")
+  }
+
+  const BING_MAPS_API_KEY = process.env.BING_MAPS_API_KEY
+
+  if (!BING_MAPS_API_KEY) {
+    console.error("Bing Maps API key not configured")
+    throw new Error("Server configuration error")
+  }
+
   try {
-    const url = new URL(req.url)
-    const query = url.searchParams.get("query")
-
-    if (!query) {
-      return NextResponse.json(
-        { error: "Query parameter is required" },
-        { status: 400 }
-      )
-    }
-
-    const BING_MAPS_API_KEY = process.env.BING_MAPS_API_KEY
-
-    if (!BING_MAPS_API_KEY) {
-      console.error("Bing Maps API key not configured")
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 }
-      )
-    }
-
     const response = await axios.get<BingAutosuggestResponse>(
       `https://dev.virtualearth.net/REST/v1/Autosuggest`,
       {
@@ -83,7 +75,7 @@ export const GET = async (req: Request) => {
       data.resourceSets[0].resources &&
       data.resourceSets[0].resources.length > 0
     ) {
-      const suggestions = data.resourceSets[0].resources[0].value.map(
+      return data.resourceSets[0].resources[0].value.map(
         (suggestion: BingSuggestion) => ({
           address:
             suggestion.address.formattedAddress ||
@@ -93,18 +85,11 @@ export const GET = async (req: Request) => {
           longitude: suggestion.point?.coordinates?.[1],
         })
       )
-
-      return NextResponse.json({
-        suggestions,
-      })
     } else {
-      return NextResponse.json({ suggestions: [] })
+      return []
     }
   } catch (error) {
     console.error("Autocomplete error:", error)
-    return NextResponse.json(
-      { error: "Failed to get address suggestions" },
-      { status: 500 }
-    )
+    throw new Error("Failed to get address suggestions")
   }
 }

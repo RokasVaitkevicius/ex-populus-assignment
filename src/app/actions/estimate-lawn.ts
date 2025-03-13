@@ -1,6 +1,24 @@
-import { NextResponse } from "next/server"
+"use server"
+
 import axios from "axios"
 import sharp from "sharp"
+
+interface LawnEstimationParams {
+  coordinates: {
+    lat: number
+    lng: number
+  }
+  zoom?: number
+  address?: string
+  mapWidth?: number
+  mapHeight?: number
+  mapBounds?: {
+    north: number
+    south: number
+    east: number
+    west: number
+  }
+}
 
 const rgbToHsv = (
   r: number,
@@ -142,62 +160,54 @@ const estimateLawnArea = async (
   }
 }
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json()
-    const {
-      coordinates,
-      zoom = 18,
-      address,
-      mapWidth = 600,
-      mapHeight = 400,
-      mapBounds,
-    } = body
+export const estimateLawn = async (params: LawnEstimationParams) => {
+  const {
+    coordinates,
+    zoom = 18,
+    address,
+    mapWidth = 600,
+    mapHeight = 400,
+    mapBounds,
+  } = params
 
-    if (!coordinates) {
-      return NextResponse.json(
-        { error: "Coordinates are required" },
-        { status: 400 }
-      )
-    }
+  if (
+    !coordinates ||
+    typeof coordinates.lat !== "number" ||
+    typeof coordinates.lng !== "number"
+  ) {
+    throw new Error("Valid coordinates are required")
+  }
 
-    const { lat, lng } = coordinates
+  const { lat, lng } = coordinates
 
-    const imageUrl = getStaticMapImage(
-      lat,
-      lng,
-      zoom,
-      mapWidth,
-      mapHeight,
-      mapBounds
-    )
+  const imageUrl = getStaticMapImage(
+    lat,
+    lng,
+    zoom,
+    mapWidth,
+    mapHeight,
+    mapBounds
+  )
 
-    const { squareFeet, lawnCoverage, detectedPixels } = await estimateLawnArea(
-      imageUrl,
-      zoom,
-      lat,
-      mapWidth,
-      mapHeight
-    )
+  const { squareFeet, lawnCoverage, detectedPixels } = await estimateLawnArea(
+    imageUrl,
+    zoom,
+    lat,
+    mapWidth,
+    mapHeight
+  )
 
-    const zoomFactor = Math.pow(2, 18 - zoom)
-    const adjustedSquareFeet = squareFeet * zoomFactor
-    const adjustedSquareMeters = adjustedSquareFeet * 0.092903
+  const zoomFactor = Math.pow(2, 18 - zoom)
+  const adjustedSquareFeet = squareFeet * zoomFactor
+  const adjustedSquareMeters = adjustedSquareFeet * 0.092903
 
-    return NextResponse.json({
-      address: address || `Location (${lat.toFixed(6)}, ${lng.toFixed(6)})`,
-      squareFeet: Math.round(adjustedSquareFeet),
-      squareMeters: Math.round(adjustedSquareMeters),
-      lawnCoverage,
-      imageUrl,
-      detectedPixels,
-      zoom,
-    })
-  } catch (error) {
-    console.error("Lawn estimation error:", error)
-    return NextResponse.json(
-      { error: "Failed to analyze lawn area" },
-      { status: 500 }
-    )
+  return {
+    address: address || `Location (${lat.toFixed(6)}, ${lng.toFixed(6)})`,
+    squareFeet: Math.round(adjustedSquareFeet),
+    squareMeters: Math.round(adjustedSquareMeters),
+    lawnCoverage,
+    imageUrl,
+    detectedPixels,
+    zoom,
   }
 }
