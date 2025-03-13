@@ -2,20 +2,6 @@ import { NextResponse } from "next/server"
 import axios from "axios"
 import sharp from "sharp"
 
-interface GeocodingResult {
-  lat: number
-  lng: number
-  formatted_address: string
-}
-
-interface LawnEstimate {
-  squareFeet: number
-  squareMeters: number
-  lawnCoverage: number
-  imageUrl?: string
-  detectedPixels?: { x: number; y: number }[]
-}
-
 const rgbToHsv = (
   r: number,
   g: number,
@@ -50,51 +36,42 @@ const rgbToHsv = (
   return [hue, saturation, value]
 }
 
-const geocodeAddress = async (address: string): Promise<GeocodingResult> => {
-  const MAPBOX_ACCESS_TOKEN =
-    process.env.MAPBOX_ACCESS_TOKEN || "YOUR_MAPBOX_ACCESS_TOKEN"
-  try {
-    const response = await axios.get(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-        address
-      )}.json`,
-      {
-        params: {
-          access_token: MAPBOX_ACCESS_TOKEN,
-          limit: 1,
-        },
-      }
-    )
-    const result = response.data.features[0]
-    if (!result) {
-      throw new Error("No results found for the provided address.")
-    }
-    const [lng, lat] = result.geometry.coordinates
-    const formatted = result.place_name
-    return {
-      lat,
-      lng,
-      formatted_address: formatted,
-    }
-  } catch (error) {
-    console.error("Error geocoding address:", error)
-    throw new Error("Failed to geocode address")
+const getStaticMapImage = (
+  lat: number,
+  lng: number,
+  zoom = 18,
+  width = 600,
+  height = 400,
+  bounds?: {
+    north: number
+    south: number
+    east: number
+    west: number
   }
+): string => {
+  const BING_MAPS_KEY = process.env.BING_MAPS_API_KEY || ""
+
+  if (bounds) {
+    const boundingBox = `${bounds.south},${bounds.west},${bounds.north},${bounds.east}`
+    return `https://dev.virtualearth.net/REST/v1/Imagery/Map/Aerial?mapArea=${boundingBox}&mapSize=${width},${height}&format=png&key=${BING_MAPS_KEY}`
+  }
+
+  const validZoom = Math.max(1, Math.min(21, Math.round(zoom)))
+  return `https://dev.virtualearth.net/REST/v1/Imagery/Map/Aerial/${lat},${lng}/${validZoom}?mapSize=${width},${height}&format=png&key=${BING_MAPS_KEY}`
 }
 
-const getStaticMapImage = async (lat: number, lng: number): Promise<string> => {
-  const MAPBOX_ACCESS_TOKEN =
-    process.env.MAPBOX_ACCESS_TOKEN || "YOUR_MAPBOX_ACCESS_TOKEN"
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/${lng},${lat},18/600x400?access_token=${MAPBOX_ACCESS_TOKEN}`
-}
-
-const estimateLawnArea = async (imageUrl: string): Promise<LawnEstimate> => {
+const estimateLawnArea = async (
+  imageUrl: string,
+  zoom = 18,
+  latitude = 0,
+  mapWidth = 600,
+  mapHeight = 400
+) => {
   try {
     const response = await axios.get(imageUrl, { responseType: "arraybuffer" })
     const imageBuffer = Buffer.from(response.data, "binary")
 
     const { data, info } = await sharp(imageBuffer)
-      .resize(300, 200)
       .raw()
       .toBuffer({ resolveWithObject: true })
 
@@ -110,11 +87,13 @@ const estimateLawnArea = async (imageUrl: string): Promise<LawnEstimate> => {
 
       const [hue, sat, val] = rgbToHsv(r, g, b)
 
-      const hueIsGreen = hue >= 55 && hue <= 190
-      const satIsEnough = sat > 10
-      const valIsEnough = val > 5
+      // Green color detection criteria
+      const hueIsGreen = hue >= 40 && hue <= 200
+      const satIsEnough = sat > 5
+      const valIsEnough = val > 5 && val < 90
+      const greenDominance = g > r * 0.9 && g > b * 0.9
 
-      if (hueIsGreen && satIsEnough && valIsEnough) {
+      if (hueIsGreen && satIsEnough && valIsEnough && greenDominance) {
         greenPixels++
 
         const pixelIndex = i / channels
@@ -129,7 +108,24 @@ const estimateLawnArea = async (imageUrl: string): Promise<LawnEstimate> => {
     }
 
     const greenFraction = greenPixels / totalPixels
-    const totalAreaSquareFeet = 556450
+
+    // At zoom level 18, each pixel is approximately 0.596 meters at the equator
+    const baseMetersPerPixelAtZoom18 = 0.596
+    const metersPerPixel = baseMetersPerPixelAtZoom18 * Math.pow(2, 18 - zoom)
+
+    let latitudeAdjusted = metersPerPixel
+
+    if (latitude !== 0) {
+      const latitudeRadians = (latitude * Math.PI) / 180
+      latitudeAdjusted = metersPerPixel / Math.cos(latitudeRadians)
+    }
+
+    const areaWidthMeters = mapWidth * latitudeAdjusted
+    const areaHeightMeters = mapHeight * latitudeAdjusted
+    const totalAreaSquareMeters = areaWidthMeters * areaHeightMeters
+
+    const totalAreaSquareFeet = totalAreaSquareMeters * 10.764
+
     const estimatedLawnSquareFeet = totalAreaSquareFeet * greenFraction
     const estimatedLawnSquareMeters = estimatedLawnSquareFeet * 0.092903
 
@@ -146,47 +142,61 @@ const estimateLawnArea = async (imageUrl: string): Promise<LawnEstimate> => {
   }
 }
 
-const getLawnEstimateFromAddress = async (
-  address: string
-): Promise<LawnEstimate & { address: string }> => {
-  const geocodeResult = await geocodeAddress(address)
-  const imageUrl = await getStaticMapImage(geocodeResult.lat, geocodeResult.lng)
-  const estimate = await estimateLawnArea(imageUrl)
-  return {
-    ...estimate,
-    address: geocodeResult.formatted_address,
-  }
-}
-
-export const POST = async (request: Request) => {
+export async function POST(req: Request) {
   try {
-    const { address, coordinates } = await request.json()
-    if (!address) {
+    const body = await req.json()
+    const {
+      coordinates,
+      zoom = 18,
+      address,
+      mapWidth = 600,
+      mapHeight = 400,
+      mapBounds,
+    } = body
+
+    if (!coordinates) {
       return NextResponse.json(
-        { error: "Address is required" },
+        { error: "Coordinates are required" },
         { status: 400 }
       )
     }
 
-    let result
+    const { lat, lng } = coordinates
 
-    if (coordinates && coordinates.lng && coordinates.lat) {
-      console.log("HE")
-      const imageUrl = await getStaticMapImage(coordinates.lat, coordinates.lng)
-      const estimate = await estimateLawnArea(imageUrl)
-      result = {
-        ...estimate,
-        address: address,
-      }
-    } else {
-      result = await getLawnEstimateFromAddress(address)
-    }
+    const imageUrl = getStaticMapImage(
+      lat,
+      lng,
+      zoom,
+      mapWidth,
+      mapHeight,
+      mapBounds
+    )
 
-    return NextResponse.json(result)
-  } catch (error: any) {
-    console.error("Error in POST /api/estimate-lawn:", error)
+    const { squareFeet, lawnCoverage, detectedPixels } = await estimateLawnArea(
+      imageUrl,
+      zoom,
+      lat,
+      mapWidth,
+      mapHeight
+    )
+
+    const zoomFactor = Math.pow(2, 18 - zoom)
+    const adjustedSquareFeet = squareFeet * zoomFactor
+    const adjustedSquareMeters = adjustedSquareFeet * 0.092903
+
+    return NextResponse.json({
+      address: address || `Location (${lat.toFixed(6)}, ${lng.toFixed(6)})`,
+      squareFeet: Math.round(adjustedSquareFeet),
+      squareMeters: Math.round(adjustedSquareMeters),
+      lawnCoverage,
+      imageUrl,
+      detectedPixels,
+      zoom,
+    })
+  } catch (error) {
+    console.error("Lawn estimation error:", error)
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: "Failed to analyze lawn area" },
       { status: 500 }
     )
   }
