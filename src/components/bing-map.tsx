@@ -1,10 +1,84 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState, useCallback } from "react"
+
+interface MicrosoftMapsLocation {
+  latitude: number
+  longitude: number
+}
+
+interface MicrosoftMapsPoint {
+  x: number
+  y: number
+}
+
+interface MicrosoftMapsPushpinOptions {
+  color?: string
+  title?: string
+  subTitle?: string
+  text?: string
+  icon?: string
+}
+
+interface MicrosoftMapsPushpin {
+  location: MicrosoftMapsLocation
+  options?: MicrosoftMapsPushpinOptions
+}
+
+interface MicrosoftMapsLocationRect {
+  getNorth(): number
+  getSouth(): number
+  getEast(): number
+  getWest(): number
+}
+
+interface MicrosoftMapsMapClickEvent {
+  pageX: number
+  pageY: number
+  target: MicrosoftMapsMap
+}
+
+interface MicrosoftMapsMapEntities {
+  clear(): void
+  push(pushpin: MicrosoftMapsPushpin): void
+}
+
+interface MicrosoftMapsMap {
+  setView(options: { center: MicrosoftMapsLocation; zoom: number }): void
+  getZoom(): number
+  getBounds(): MicrosoftMapsLocationRect
+  entities: MicrosoftMapsMapEntities
+  tryPixelToLocation(point: MicrosoftMapsPoint): MicrosoftMapsLocation
+}
+
+interface MicrosoftMaps {
+  Maps: {
+    Map: new (
+      element: HTMLElement,
+      options: Record<string, unknown>
+    ) => MicrosoftMapsMap
+    Location: new (latitude: number, longitude: number) => MicrosoftMapsLocation
+    Point: new (x: number, y: number) => MicrosoftMapsPoint
+    Pushpin: new (
+      location: MicrosoftMapsLocation,
+      options: MicrosoftMapsPushpinOptions
+    ) => MicrosoftMapsPushpin
+    Events: {
+      addHandler: (
+        target: MicrosoftMapsMap | MicrosoftMapsPushpin,
+        eventName: string,
+        handler: (e: MicrosoftMapsMapClickEvent) => void
+      ) => void
+    }
+    MapTypeId: {
+      aerial: string
+    }
+  }
+}
 
 declare global {
   interface Window {
-    Microsoft: any
+    Microsoft: MicrosoftMaps
     GetMap: () => void
     bingMapsLoaded: boolean
   }
@@ -32,7 +106,7 @@ export const BingMap = ({
   onMapReady?: () => void
 }) => {
   const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstanceRef = useRef<any>(null)
+  const mapInstanceRef = useRef<MicrosoftMapsMap | null>(null)
   const [isMapReady, setIsMapReady] = useState(false)
   const [selectedLocation, setSelectedLocation] = useState<{
     lat: number
@@ -47,31 +121,7 @@ export const BingMap = ({
   const defaultLatitude = 38.8977
   const defaultLongitude = -77.0365
 
-  useEffect(() => {
-    if (window.Microsoft && window.Microsoft.Maps) {
-      initMap()
-      return
-    }
-
-    const bingMapsScript = document.createElement("script")
-    const bingMapsKey = process.env.NEXT_PUBLIC_BING_MAPS_KEY || ""
-    bingMapsScript.src = `https://www.bing.com/api/maps/mapcontrol?callback=GetMap&key=${bingMapsKey}`
-    bingMapsScript.async = true
-    bingMapsScript.defer = true
-
-    window.GetMap = () => {
-      window.bingMapsLoaded = true
-      initMap()
-    }
-
-    document.body.appendChild(bingMapsScript)
-
-    return () => {
-      document.body.removeChild(bingMapsScript)
-    }
-  }, [])
-
-  const initMap = () => {
+  const initMap = useCallback(() => {
     if (!mapRef.current || mapInstanceRef.current) return
 
     const Microsoft = window.Microsoft
@@ -87,7 +137,7 @@ export const BingMap = ({
     Microsoft.Maps.Events.addHandler(
       mapInstanceRef.current,
       "click",
-      (e: any) => {
+      (e: MicrosoftMapsMapClickEvent) => {
         const point = new Microsoft.Maps.Point(e.pageX, e.pageY)
         const location = e.target.tryPixelToLocation(point)
 
@@ -112,7 +162,7 @@ export const BingMap = ({
 
     setIsMapReady(true)
     if (onMapReady) onMapReady()
-  }
+  }, [currentZoom, onMapReady, defaultLatitude, defaultLongitude])
 
   const updatePushpin = (lat: number, lng: number) => {
     if (!mapInstanceRef.current || !window.Microsoft) return
@@ -126,6 +176,32 @@ export const BingMap = ({
     })
     mapInstanceRef.current.entities.push(pushpin)
   }
+
+  useEffect(() => {
+    if (window.Microsoft && window.Microsoft.Maps) {
+      initMap()
+      return
+    }
+
+    const bingMapsScript = document.createElement("script")
+    const bingMapsKey = process.env.NEXT_PUBLIC_BING_MAPS_KEY || ""
+    bingMapsScript.src = `https://www.bing.com/api/maps/mapcontrol?callback=GetMap&key=${bingMapsKey}`
+    bingMapsScript.async = true
+    bingMapsScript.defer = true
+
+    window.GetMap = () => {
+      window.bingMapsLoaded = true
+      initMap()
+    }
+
+    document.body.appendChild(bingMapsScript)
+
+    return () => {
+      if (document.body.contains(bingMapsScript)) {
+        document.body.removeChild(bingMapsScript)
+      }
+    }
+  }, [initMap])
 
   useEffect(() => {
     if (!isMapReady || !initialLocation) return
@@ -161,11 +237,12 @@ export const BingMap = ({
     updateDimensions()
 
     const resizeObserver = new ResizeObserver(updateDimensions)
-    resizeObserver.observe(mapRef.current)
+    const currentMapRef = mapRef.current
+    resizeObserver.observe(currentMapRef)
 
     return () => {
-      if (mapRef.current) {
-        resizeObserver.unobserve(mapRef.current)
+      if (currentMapRef) {
+        resizeObserver.unobserve(currentMapRef)
       }
     }
   }, [])

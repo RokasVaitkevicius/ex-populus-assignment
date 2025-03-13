@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
+import Image from "next/image"
 
 export const LawnVisualizer = ({
   imageUrl,
@@ -114,13 +115,20 @@ export const LawnVisualizer = ({
             </div>
           )}
 
-          <img
-            ref={imgRef}
+          <Image
+            ref={(img) => {
+              if (img) {
+                imgRef.current = img
+              }
+            }}
             src={imageUrl}
             alt="Satellite view"
             className="absolute inset-0 w-full h-full object-contain"
             onLoad={handleImageLoad}
-            crossOrigin="anonymous"
+            fill
+            sizes="(max-width: 768px) 100vw, 50vw"
+            priority
+            unoptimized
           />
 
           <canvas

@@ -36,7 +36,6 @@ export const LawnEstimator = () => {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null
   )
-  const [_, setMapReady] = useState(false)
 
   const {
     control,
@@ -159,17 +158,20 @@ export const LawnEstimator = () => {
           <p className="text-sm font-medium">How to use:</p>
           <ol className="text-sm list-decimal pl-5 mt-1 space-y-1">
             <li>
-              Enter an address to center the map and click "Find Location"
+              Enter an address to center the map and click &quot;Find
+              Location&quot;
             </li>
             <li>Adjust the selected viewport on the map</li>
-            <li>Click "Analyze Selected Point" to calculate the lawn area</li>
+            <li>
+              Click &quot;Analyze Selected Point&quot; to calculate the lawn
+              area
+            </li>
           </ol>
         </div>
 
         <div className="h-[400px] w-full rounded-md overflow-hidden border border-gray-200">
           <BingMap
             initialLocation={location}
-            onMapReady={() => setMapReady(true)}
             onLocationSelected={handlePointSelected}
           />
         </div>
